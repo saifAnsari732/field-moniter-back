@@ -201,7 +201,7 @@ exports.getSessionRoute = async (req, res) => {
 // @desc Get all live employees (admin)
 exports.getLiveEmployees = async (req, res) => {
   try {
-    const employees = await User.find({ isTracking: true, isOnline: true })
+    const employees = await User.find({ isTracking: true })
       .select('name employeeId department avatar isTracking isOnline lastSeen');
     const locations = await LiveLocation.find({
       isActive: true, date: new Date().toISOString().slice(0, 10)
