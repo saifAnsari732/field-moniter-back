@@ -36,7 +36,8 @@ const allowedOrigins = [
   'https://www.tm24news.com',
   'https://kisanteamweb.it.com',
   'https://tm-24news.vercel.app',
-  'https://tm24news.vercel.app'
+  'https://tm24news.vercel.app',
+  'https://crm-front-sand.vercel.app'
 ];
 
 // 🔴 यहाँ EXPRESS API के लिए CORS लगाना ज़रूरी है (इसे अपने कोड में जोड़ें):
