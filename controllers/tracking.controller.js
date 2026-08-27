@@ -39,7 +39,11 @@ exports.startTracking = async (req, res) => {
       }
     }).catch(() => {});
 
-    await User.findByIdAndUpdate(req.user._id, { isTracking: true });
+    await User.findByIdAndUpdate(req.user._id, { 
+      isTracking: true,
+      isOnline: true,
+      lastSeen: new Date()
+    });
 
     // Attendance check-in
     let attendance = await Attendance.findOne({ employee: req.user._id, date: today });
@@ -95,6 +99,13 @@ exports.updateLocation = async (req, res) => {
     }
     session.totalDistance = totalDist;
     await session.save();
+
+    // Update user status as they are actively sending locations
+    await User.findByIdAndUpdate(req.user._id, {
+      isOnline: true,
+      isTracking: true,
+      lastSeen: new Date()
+    });
 
     // Emit to admin in real-time
     const io = req.app.get('io');
