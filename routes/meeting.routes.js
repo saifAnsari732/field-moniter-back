@@ -6,4 +6,5 @@ router.post('/', protect, ac.createMeeting);
 router.get('/my', protect, ac.getMyMeetings);
 router.put('/:id', protect, ac.updateMeeting);
 router.get('/all', protect, authorize('admin', 'hr'), ac.getAllMeetings);
+router.delete('/:id', protect, authorize('admin', 'hr'), ac.deleteMeeting);
 module.exports = router;

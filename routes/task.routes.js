@@ -11,4 +11,5 @@ router.get('/all', authorize('admin'), taskController.getAllTasks);
 router.get('/my', authorize('employee'), taskController.getMyTasks);
 router.patch('/:id/status', authorize('employee'), taskController.updateTaskStatus);
 
+router.delete('/:id', authorize('admin', 'hr'), taskController.deleteTask);
 module.exports = router;

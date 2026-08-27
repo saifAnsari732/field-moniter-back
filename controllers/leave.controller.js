@@ -101,3 +101,12 @@ exports.updateLeaveStatus = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
+// @desc Delete leave
+exports.deleteLeave = async (req, res) => {
+  try {
+    await Leave.findByIdAndDelete(req.params.id);
+    res.json({ success: true, message: 'Leave deleted' });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+

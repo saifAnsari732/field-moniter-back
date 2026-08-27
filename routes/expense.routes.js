@@ -6,4 +6,5 @@ router.post('/', protect, ac.createExpense);
 router.get('/my', protect, ac.getMyExpenses);
 router.get('/all', protect, authorize('admin', 'hr'), ac.getAllExpenses);
 router.put('/:id/approve', protect, authorize('admin', 'hr'), ac.approveExpense);
+router.delete('/:id', protect, authorize('admin', 'hr'), ac.deleteExpense);
 module.exports = router;

@@ -285,3 +285,20 @@ exports.getTrackingHistory = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
+// @desc Delete meeting
+exports.deleteMeeting = async (req, res) => {
+  try {
+    await Meeting.findByIdAndDelete(req.params.id);
+    res.json({ success: true, message: 'Meeting deleted' });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+// @desc Delete expense
+exports.deleteExpense = async (req, res) => {
+  try {
+    await Expense.findByIdAndDelete(req.params.id);
+    res.json({ success: true, message: 'Expense deleted' });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+

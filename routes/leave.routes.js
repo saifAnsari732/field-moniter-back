@@ -11,4 +11,5 @@ router.get('/my', authorize('employee'), leaveController.getMyLeaves);
 router.get('/all', authorize('admin', 'hr'), leaveController.getAllLeaves);
 router.patch('/:id/status', authorize('admin', 'hr'), leaveController.updateLeaveStatus);
 
+router.delete('/:id', authorize('admin', 'hr'), leaveController.deleteLeave);
 module.exports = router;
