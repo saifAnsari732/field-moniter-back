@@ -127,8 +127,13 @@ exports.getAllEmployees = async (req, res) => {
   try {
     const { page = 1, limit = 20, search, department, isActive, role } = req.query;
     const filter = {};
-    if (role) filter.role = role;
-    else filter.role = 'employee';
+    if (role === 'all') {
+      filter.role = { $in: ['employee', 'manager'] };
+    } else if (role) {
+      filter.role = role;
+    } else {
+      filter.role = 'employee';
+    }
     if (search) filter.$or = [{ name: { $regex: search, $options: 'i' } }, { email: { $regex: search, $options: 'i' } }, { employeeId: { $regex: search, $options: 'i' } }];
     if (department) filter.department = department;
     if (isActive !== undefined) filter.isActive = isActive === 'true';
