@@ -153,55 +153,66 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://ansarisaifuddin732_db
     }
 
     // ── No-Movement Cron (REST API tracking) ─────────────────────────────────
-    // Runs every 5 minutes. Checks any user whose isTracking=true but their
-    // LiveLocation session hasn't received a new coordinate in 5+ minutes.
-    // Sends alert socket to that employee and notifies admins.
+    // TEST MODE: 2 minutes interval, targeting SAIFUDDIN ANSARI specifically
+    // Change back to 5 * 60 * 1000 after testing
     try {
       const User = require('./models/User.model');
       const { LiveLocation } = require('./models/index');
-      const NO_MOVE_MS = 5 * 60 * 1000; // 5 minutes
+
+      const NO_MOVE_MS   = 2 * 60 * 1000; // ⚠️ TEST: 2 min (change to 5*60*1000 in prod)
+      const CRON_INTERVAL = 2 * 60 * 1000; // ⚠️ TEST: run every 2 min
+
+      // TEST: specific employee ID (SAIFUDDIN ANSARI)
+      const TEST_EMP_ID = '6a869f68a49bfc4e9cf7359a';
 
       setInterval(async () => {
         try {
-          const now = Date.now();
+          const now   = Date.now();
           const today = new Date().toISOString().slice(0, 10);
 
-          // Find all active sessions updated more than 5 min ago
+          // Find active sessions not updated in NO_MOVE_MS
           const staleSessions = await LiveLocation.find({
             isActive: true,
             date: today,
+            employee: TEST_EMP_ID,            // ⚠️ TEST: only this employee
             updatedAt: { $lt: new Date(now - NO_MOVE_MS) }
           }).populate('employee', '_id name socketId isTracking');
 
-          for (const session of staleSessions) {
-            const emp = session.employee;
-            if (!emp || !emp.isTracking) continue;
+          // If no stale session found but employee is tracking, still alert (for test)
+          let targets = staleSessions;
+          if (targets.length === 0) {
+            // Force test alert to this employee even without a stale session
+            const testEmp = await User.findById(TEST_EMP_ID).select('_id name socketId isTracking');
+            if (testEmp) targets = [{ employee: testEmp }];
+          }
 
-            // Send alert to employee via socket (if connected)
-            if (emp.socketId) {
-              io.to(`user_${emp._id}`).emit('alert', {
-                title: '⚠️ Movement Alert',
-                message: 'You have been stationary for 5 minutes. Please start moving or update your status.',
-                type: 'stationary'
-              });
-            }
+          for (const session of targets) {
+            const emp = session.employee;
+            if (!emp) continue;
+
+            // Send alert to employee room (works even if socketId changes)
+            io.to(`user_${emp._id}`).emit('alert', {
+              title: '⚠️ Movement Alert',
+              message: 'You have been stationary for 2 minutes (TEST). Please start moving!',
+              type: 'stationary'
+            });
 
             // Notify admins
             io.to('admins').emit('employee_stationary', {
               employeeId: emp._id,
               name: emp.name,
               timestamp: Date.now(),
-              message: `${emp.name} has been stationary for 5+ minutes (REST tracking).`
+              message: `[TEST] ${emp.name} stationary alert triggered.`
             });
 
-            console.log(`⚠️ [Cron] Stationary alert → ${emp.name}`);
+            console.log(`⚠️ [TEST Cron] Alert sent → ${emp.name}`);
           }
         } catch (cronErr) {
           console.error('No-movement cron error:', cronErr.message);
         }
-      }, NO_MOVE_MS);
+      }, CRON_INTERVAL);
 
-      console.log('⏰ No-movement cron started (5-min interval).');
+      console.log('⏰ [TEST] No-movement cron started (2-min interval, SAIFUDDIN ANSARI).');
     } catch (err) {
       console.error('Failed to start no-movement cron:', err.message);
     }
