@@ -59,8 +59,69 @@ module.exports = (io) => {
 
     setupHeartbeatTimeout();
 
+    // ─── No-Movement Detection ──────────────────────────────────────────────────
+    const NO_MOVE_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+    const MOVE_THRESHOLD_METERS = 20; // less than 20m = not moved
+
+    // Haversine distance in meters
+    function haversineMeters(lat1, lng1, lat2, lng2) {
+      const R = 6371000;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLng = (lng2 - lng1) * Math.PI / 180;
+      const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    let lastKnownPos = null;        // { lat, lng }
+    let noMoveTimer = null;         // setTimeout handle
+    let stationaryAlertSent = false; // avoid spam
+
+    function resetNoMoveTimer(lat, lng) {
+      if (noMoveTimer) clearTimeout(noMoveTimer);
+      stationaryAlertSent = false;
+      noMoveTimer = setTimeout(() => {
+        if (stationaryAlertSent) return;
+        stationaryAlertSent = true;
+        // Alert employee
+        socket.emit('alert', {
+          title: '⚠️ Movement Alert',
+          message: 'You have been stationary for 5 minutes. Please start moving or update your status.',
+          type: 'stationary'
+        });
+        // Alert admins
+        io.to('admins').emit('employee_stationary', {
+          employeeId: user._id,
+          name: user.name,
+          avatar: user.avatar,
+          department: user.department,
+          lat,
+          lng,
+          timestamp: Date.now(),
+          message: `${user.name} has been stationary for 5 minutes.`
+        });
+        console.log(`⚠️ Stationary alert sent for ${user.name}`);
+      }, NO_MOVE_TIMEOUT);
+    }
+
     // ─── Tracking Events ────────────────────────────────────────────────────────
     socket.on('location_ping', async (data) => {
+      const { lat, lng } = data;
+
+      // Check movement
+      if (lastKnownPos && lat && lng) {
+        const dist = haversineMeters(lastKnownPos.lat, lastKnownPos.lng, lat, lng);
+        if (dist >= MOVE_THRESHOLD_METERS) {
+          // Employee moved — reset timer
+          lastKnownPos = { lat, lng };
+          resetNoMoveTimer(lat, lng);
+        }
+        // else: still stationary, timer keeps running
+      } else if (lat && lng) {
+        // First ping
+        lastKnownPos = { lat, lng };
+        resetNoMoveTimer(lat, lng);
+      }
+
       // Real-time location broadcast to admins
       io.to('admins').emit('employee_location', {
         employeeId: user._id,
@@ -70,6 +131,7 @@ module.exports = (io) => {
         ...data,
       });
     });
+
 
     socket.on('tracking_started', (data) => {
       io.to('admins').emit('employee_tracking_started', {
@@ -81,6 +143,10 @@ module.exports = (io) => {
     });
 
     socket.on('tracking_stopped', (data) => {
+      // Clear no-movement timer
+      if (noMoveTimer) { clearTimeout(noMoveTimer); noMoveTimer = null; }
+      lastKnownPos = null;
+      stationaryAlertSent = false;
       io.to('admins').emit('employee_tracking_stopped', {
         employeeId: user._id,
         name: user.name,
@@ -115,6 +181,8 @@ module.exports = (io) => {
         clearTimeout(heartbeatTimers.get(socket.id));
         heartbeatTimers.delete(socket.id);
       }
+      // Clear no-movement timer
+      if (noMoveTimer) { clearTimeout(noMoveTimer); noMoveTimer = null; }
 
       await User.findByIdAndUpdate(user._id, {
         isOnline: false,
