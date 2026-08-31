@@ -153,30 +153,70 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://ansarisaifuddin732_db
     }
 
     // ── No-Movement Cron (REST API tracking) ─────────────────────────────────
-    // Runs every 5 minutes. Checks any user whose isTracking=true but their
-    // LiveLocation session hasn't received a new coordinate in 5+ minutes.
+    // Runs every 5 minutes. Checks if the distance between the employee's 
+    // current location and their location 5 minutes ago is less than 20 meters.
     try {
       const User = require('./models/User.model');
       const { LiveLocation, Task, Notification } = require('./models/index');
 
       const NO_MOVE_MS   = 5 * 60 * 1000; // 5 minutes
       const CRON_INTERVAL = 5 * 60 * 1000; // Run every 5 minutes
+      const MOVE_THRESHOLD = 20; // 20 meters
+
+      function haversineMeters(lat1, lng1, lat2, lng2) {
+        if (!lat1 || !lng1 || !lat2 || !lng2) return 0;
+        const R = 6371000;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLng = (lng2 - lng1) * Math.PI / 180;
+        const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      }
 
       setInterval(async () => {
         try {
           const now   = Date.now();
           const today = new Date().toISOString().slice(0, 10);
 
-          // Find active sessions not updated in the last 5 minutes
-          const staleSessions = await LiveLocation.find({
+          // Find ALL active tracking sessions for today
+          const activeSessions = await LiveLocation.find({
             isActive: true,
-            date: today,
-            updatedAt: { $lt: new Date(now - NO_MOVE_MS) }
+            date: today
           }).populate('employee', '_id name socketId isTracking');
 
-          for (const session of staleSessions) {
+          for (const session of activeSessions) {
             const emp = session.employee;
             if (!emp || !emp.isTracking) continue;
+
+            const coords = session.coordinates;
+            if (!coords || coords.length === 0) continue;
+
+            const latestCoord = coords[coords.length - 1];
+            
+            // Find a coordinate from at least 5 minutes ago
+            const fiveMinsAgo = now - NO_MOVE_MS;
+            let pastCoord = null;
+            
+            for (let i = coords.length - 1; i >= 0; i--) {
+              const coordTime = new Date(coords[i].timestamp || session.updatedAt).getTime();
+              if (coordTime <= fiveMinsAgo) {
+                pastCoord = coords[i];
+                break;
+              }
+            }
+
+            // If session started less than 5 mins ago, skip
+            if (!pastCoord) continue;
+
+            // Check if they moved more than 20 meters in the last 5 minutes
+            const dist = haversineMeters(pastCoord.lat, pastCoord.lng, latestCoord.lat, latestCoord.lng);
+            
+            if (dist >= MOVE_THRESHOLD) {
+              // They moved, so do NOT send an alert
+              continue;
+            }
+
+            // If we reach here, they have moved LESS than 20 meters in 5 minutes (STATIONARY)
+
 
             const alertTitle = '⚠️ चेतावनी (Alert)';
             const alertMsg = 'आप पिछले 5 मिनट से एक ही जगह पर हैं। कृपया अपनी लोकेशन अपडेट करें या आगे बढ़ें।';
