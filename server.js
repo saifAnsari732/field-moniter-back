@@ -153,75 +153,61 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://ansarisaifuddin732_db
     }
 
     // ── No-Movement Cron (REST API tracking) ─────────────────────────────────
-    // TEST MODE: 2 minutes interval, targeting SAIFUDDIN ANSARI specifically
-    // Change back to 5 * 60 * 1000 after testing
+    // Runs every 5 minutes. Checks any user whose isTracking=true but their
+    // LiveLocation session hasn't received a new coordinate in 5+ minutes.
     try {
       const User = require('./models/User.model');
-      const { LiveLocation } = require('./models/index');
+      const { LiveLocation, Task, Notification } = require('./models/index');
 
-      const NO_MOVE_MS   = 2 * 60 * 1000; // ⚠️ TEST: 2 min (change to 5*60*1000 in prod)
-      const CRON_INTERVAL = 2 * 60 * 1000; // ⚠️ TEST: run every 2 min
-
-      // TEST: specific employee ID (SAIFUDDIN ANSARI)
-      const TEST_EMP_ID = '6a869f68a49bfc4e9cf7359a';
+      const NO_MOVE_MS   = 5 * 60 * 1000; // 5 minutes
+      const CRON_INTERVAL = 5 * 60 * 1000; // Run every 5 minutes
 
       setInterval(async () => {
         try {
           const now   = Date.now();
           const today = new Date().toISOString().slice(0, 10);
 
-          // Find active sessions not updated in NO_MOVE_MS
+          // Find active sessions not updated in the last 5 minutes
           const staleSessions = await LiveLocation.find({
             isActive: true,
             date: today,
-            employee: TEST_EMP_ID,            // ⚠️ TEST: only this employee
             updatedAt: { $lt: new Date(now - NO_MOVE_MS) }
           }).populate('employee', '_id name socketId isTracking');
 
-          // If no stale session found but employee is tracking, still alert (for test)
-          let targets = staleSessions;
-          if (targets.length === 0) {
-            // Force test alert to this employee even without a stale session
-            const testEmp = await User.findById(TEST_EMP_ID).select('_id name socketId isTracking');
-            if (testEmp) targets = [{ employee: testEmp }];
-          }
-
-          for (const session of targets) {
+          for (const session of staleSessions) {
             const emp = session.employee;
-            if (!emp) continue;
+            if (!emp || !emp.isTracking) continue;
+
+            const alertTitle = '⚠️ चेतावनी (Alert)';
+            const alertMsg = 'आप पिछले 5 मिनट से एक ही जगह पर हैं। कृपया अपनी लोकेशन अपडेट करें या आगे बढ़ें।';
 
             // --- 1. Create a Task so it shows up in Action Plan / Bell icon ---
             try {
-              const { Task, Notification } = require('./models/index');
-              
-              // We assign the task by a dummy Admin or just the first Admin we find,
-              // or we can use the employee's manager. If neither, use a random ID for testing.
-              // We'll just leave assignedBy as the employee themselves for the system alert.
               const alertTask = await Task.create({
-                title: '⚠️ URGENT: Movement Alert',
-                description: 'You have been stationary for too long. Please start moving immediately or update your status.',
+                title: alertTitle,
+                description: alertMsg,
                 employee: emp._id,
                 assignedBy: emp._id, // System alert, self-assigned for now
                 priority: 'high',
                 status: 'pending'
               });
 
-              // Create notification in DB as well
+              // Create notification in DB
               await Notification.create({
                 recipient: emp._id,
                 sender: emp._id,
                 type: 'alert',
-                title: 'Stationary Alert',
-                message: 'You have been stationary for 2 minutes (TEST).'
+                title: alertTitle,
+                message: alertMsg
               });
 
-              // Send 'new_task' socket event (in case they listen for it)
+              // Send 'new_task' socket event
               io.to(`user_${emp._id}`).emit('new_task', { task: alertTask });
               
-              // Still emit 'alert' for the frontend loud alarm we added
+              // Emit 'alert' socket event
               io.to(`user_${emp._id}`).emit('alert', {
-                title: '⚠️ Movement Alert',
-                message: 'You have been stationary for 2 minutes (TEST). Please start moving!',
+                title: alertTitle,
+                message: alertMsg,
                 type: 'stationary'
               });
 
@@ -234,17 +220,17 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://ansarisaifuddin732_db
               employeeId: emp._id,
               name: emp.name,
               timestamp: Date.now(),
-              message: `[TEST] ${emp.name} stationary alert triggered.`
+              message: `[Stationary] ${emp.name} 5 मिनट से एक ही जगह पर है।`
             });
 
-            console.log(`⚠️ [TEST Cron] Task/Alert sent → ${emp.name}`);
+            console.log(`⚠️ [Cron] Stationary alert sent → ${emp.name}`);
           }
         } catch (cronErr) {
           console.error('No-movement cron error:', cronErr.message);
         }
       }, CRON_INTERVAL);
 
-      console.log('⏰ [TEST] No-movement cron started (2-min interval, SAIFUDDIN ANSARI).');
+      console.log('⏰ No-movement cron started (5-min interval, All Employees).');
     } catch (err) {
       console.error('Failed to start no-movement cron:', err.message);
     }
