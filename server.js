@@ -153,35 +153,30 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://ansarisaifuddin732_db
     }
 
     // ── No-Movement Cron (REST API tracking) ─────────────────────────────────
+    // Runs every 5 minutes. Checks any user whose isTracking=true but their
+    // LiveLocation session hasn't received a new coordinate in 5+ minutes.
     try {
       const User = require('./models/User.model');
       const { LiveLocation, Task, Notification } = require('./models/index');
 
-      const NO_MOVE_MS   = 1 * 60 * 1000; // TEST: 1 minute
-      const CRON_INTERVAL = 1 * 60 * 1000; // TEST: 1 minute
+      const NO_MOVE_MS   = 5 * 60 * 1000; // 5 minutes
+      const CRON_INTERVAL = 5 * 60 * 1000; // Run every 5 minutes
 
       setInterval(async () => {
         try {
           const now   = Date.now();
           const today = new Date().toISOString().slice(0, 10);
 
-          // Find active sessions not updated in the last 1 minute
+          // Find active sessions not updated in the last 5 minutes
           const staleSessions = await LiveLocation.find({
             isActive: true,
             date: today,
             updatedAt: { $lt: new Date(now - NO_MOVE_MS) }
           }).populate('employee', '_id name socketId isTracking');
 
-          // --- FORCE TEST FOR SAIFUDDIN ---
-          let targets = staleSessions;
-          if (targets.length === 0) {
-            const testEmp = await User.findById('6a869f68a49bfc4e9cf7359a').select('_id name socketId isTracking');
-            if (testEmp) targets = [{ employee: testEmp }];
-          }
-
-          for (const session of targets) {
+          for (const session of staleSessions) {
             const emp = session.employee;
-            if (!emp) continue;
+            if (!emp || !emp.isTracking) continue;
 
             const alertTitle = '⚠️ चेतावनी (Alert)';
             const alertMsg = 'आप पिछले 5 मिनट से एक ही जगह पर हैं। कृपया अपनी लोकेशन अपडेट करें या आगे बढ़ें।';
