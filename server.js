@@ -190,12 +190,44 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://ansarisaifuddin732_db
             const emp = session.employee;
             if (!emp) continue;
 
-            // Send alert to employee room (works even if socketId changes)
-            io.to(`user_${emp._id}`).emit('alert', {
-              title: '⚠️ Movement Alert',
-              message: 'You have been stationary for 2 minutes (TEST). Please start moving!',
-              type: 'stationary'
-            });
+            // --- 1. Create a Task so it shows up in Action Plan / Bell icon ---
+            try {
+              const { Task, Notification } = require('./models/index');
+              
+              // We assign the task by a dummy Admin or just the first Admin we find,
+              // or we can use the employee's manager. If neither, use a random ID for testing.
+              // We'll just leave assignedBy as the employee themselves for the system alert.
+              const alertTask = await Task.create({
+                title: '⚠️ URGENT: Movement Alert',
+                description: 'You have been stationary for too long. Please start moving immediately or update your status.',
+                employee: emp._id,
+                assignedBy: emp._id, // System alert, self-assigned for now
+                priority: 'high',
+                status: 'pending'
+              });
+
+              // Create notification in DB as well
+              await Notification.create({
+                recipient: emp._id,
+                sender: emp._id,
+                type: 'alert',
+                title: 'Stationary Alert',
+                message: 'You have been stationary for 2 minutes (TEST).'
+              });
+
+              // Send 'new_task' socket event (in case they listen for it)
+              io.to(`user_${emp._id}`).emit('new_task', { task: alertTask });
+              
+              // Still emit 'alert' for the frontend loud alarm we added
+              io.to(`user_${emp._id}`).emit('alert', {
+                title: '⚠️ Movement Alert',
+                message: 'You have been stationary for 2 minutes (TEST). Please start moving!',
+                type: 'stationary'
+              });
+
+            } catch (dbErr) {
+              console.error('Error creating alert task:', dbErr.message);
+            }
 
             // Notify admins
             io.to('admins').emit('employee_stationary', {
@@ -205,7 +237,7 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://ansarisaifuddin732_db
               message: `[TEST] ${emp.name} stationary alert triggered.`
             });
 
-            console.log(`⚠️ [TEST Cron] Alert sent → ${emp.name}`);
+            console.log(`⚠️ [TEST Cron] Task/Alert sent → ${emp.name}`);
           }
         } catch (cronErr) {
           console.error('No-movement cron error:', cronErr.message);
