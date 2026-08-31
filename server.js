@@ -138,10 +138,76 @@ app.get('/api/health', (req, res) => res.json({ status: 'OK', timestamp: new Dat
 const socketHandler = require('./socket/socket.handler');
 socketHandler(io);
 
-// MongoDB Connections   drhedstjfyk
+// MongoDB Connection
 mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://ansarisaifuddin732_db_user:M2oWIFAFysw7DpGi@cluster0.gbipgw2.mongodb.net/')
-  .then(async () => { console.log('✅ MongoDB connected'); try { const User = require('./models/User'); await User.updateMany({ isOnline: true }, { isOnline: false, socketId: null }); console.log('🔄 Reset all online users to offline on server startup.'); } catch(err) { console.error('Failed to reset online status:', err); } })
+  .then(async () => {
+    console.log('✅ MongoDB connected');
+
+    // ── Reset all stuck online status on startup ──────────────────────────────
+    try {
+      const User = require('./models/User.model');
+      await User.updateMany({ isOnline: true }, { isOnline: false, socketId: null });
+      console.log('🔄 Reset all online users to offline on startup.');
+    } catch (err) {
+      console.error('Failed to reset online status:', err.message);
+    }
+
+    // ── No-Movement Cron (REST API tracking) ─────────────────────────────────
+    // Runs every 5 minutes. Checks any user whose isTracking=true but their
+    // LiveLocation session hasn't received a new coordinate in 5+ minutes.
+    // Sends alert socket to that employee and notifies admins.
+    try {
+      const User = require('./models/User.model');
+      const { LiveLocation } = require('./models/index');
+      const NO_MOVE_MS = 5 * 60 * 1000; // 5 minutes
+
+      setInterval(async () => {
+        try {
+          const now = Date.now();
+          const today = new Date().toISOString().slice(0, 10);
+
+          // Find all active sessions updated more than 5 min ago
+          const staleSessions = await LiveLocation.find({
+            isActive: true,
+            date: today,
+            updatedAt: { $lt: new Date(now - NO_MOVE_MS) }
+          }).populate('employee', '_id name socketId isTracking');
+
+          for (const session of staleSessions) {
+            const emp = session.employee;
+            if (!emp || !emp.isTracking) continue;
+
+            // Send alert to employee via socket (if connected)
+            if (emp.socketId) {
+              io.to(`user_${emp._id}`).emit('alert', {
+                title: '⚠️ Movement Alert',
+                message: 'You have been stationary for 5 minutes. Please start moving or update your status.',
+                type: 'stationary'
+              });
+            }
+
+            // Notify admins
+            io.to('admins').emit('employee_stationary', {
+              employeeId: emp._id,
+              name: emp.name,
+              timestamp: Date.now(),
+              message: `${emp.name} has been stationary for 5+ minutes (REST tracking).`
+            });
+
+            console.log(`⚠️ [Cron] Stationary alert → ${emp.name}`);
+          }
+        } catch (cronErr) {
+          console.error('No-movement cron error:', cronErr.message);
+        }
+      }, NO_MOVE_MS);
+
+      console.log('⏰ No-movement cron started (5-min interval).');
+    } catch (err) {
+      console.error('Failed to start no-movement cron:', err.message);
+    }
+  })
   .catch(err => console.error('❌ MongoDB error:', err));
+
 
 // Global error handler
 app.use((err, req, res, next) => {
