@@ -221,17 +221,7 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://ansarisaifuddin732_db
             const alertTitle = '⚠️ चेतावनी (Alert)';
             const alertMsg = 'आप पिछले 5 मिनट से एक ही जगह पर हैं। कृपया अपनी लोकेशन अपडेट करें या आगे बढ़ें।';
 
-            // --- 1. Create a Task so it shows up in Action Plan / Bell icon ---
             try {
-              const alertTask = await Task.create({
-                title: alertTitle,
-                description: alertMsg,
-                employee: emp._id,
-                assignedBy: emp._id, // System alert, self-assigned for now
-                priority: 'high',
-                status: 'pending'
-              });
-
               // Create notification in DB
               await Notification.create({
                 recipient: emp._id,
@@ -241,9 +231,6 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://ansarisaifuddin732_db
                 message: alertMsg
               });
 
-              // Send 'new_task' socket event
-              io.to(`user_${emp._id}`).emit('new_task', { task: alertTask });
-              
               // Emit 'alert' socket event
               io.to(`user_${emp._id}`).emit('alert', {
                 title: alertTitle,
@@ -252,7 +239,7 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb+srv://ansarisaifuddin732_db
               });
 
             } catch (dbErr) {
-              console.error('Error creating alert task:', dbErr.message);
+              console.error('Error creating alert notification:', dbErr.message);
             }
 
             // Notify admins
