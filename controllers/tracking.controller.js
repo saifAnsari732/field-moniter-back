@@ -190,7 +190,7 @@ exports.getTodaySessions = async (req, res) => {
 // @desc Get session route (admin)
 exports.getSessionRoute = async (req, res) => {
   try {
-    const session = await LiveLocation.findById(req.params.id).populate('employee', 'name employeeId');
+    const session = await LiveLocation.findById(req.params.id).populate('employee', 'name employeeId avatar');
     if (!session) return res.status(404).json({ success: false, message: 'Session not found' });
     res.json({ success: true, session });
   } catch (err) {
